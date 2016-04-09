@@ -94,32 +94,64 @@ module Isuconp
 
       def make_posts(results, all_comments: false)
         posts = []
-        results.to_a.each do |post|
-          post[:comment_count] = db.prepare('SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?').execute(
-            post[:id]
-          ).first[:count]
+        users = {}
 
-          query = 'SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC'
+        c = []
+
+        post_ids = []
+        comment_uids = []
+
+        results.to_a.each do |post|
+          query = "SELECT * FROM `comments` WHERE `post_id` = #{post[:id]} ORDER BY `created_at` DESC"
           unless all_comments
             query += ' LIMIT 3'
           end
-          comments = db.prepare(query).execute(
-            post[:id]
-          ).to_a
+
+          unless users[post[:user_id]]
+            q = 'SELECT * FROM `users` WHERE `id` = ' + post[:user_id].to_s
+            c << q
+            db.prepare(q).execute.each{ |u|
+              users[u[:id]] = u
+            }
+          end
+          post[:user] = users[post[:user_id]]
+
+          if post[:user][:del_flg] == 0
+            posts.push(post)
+            post_ids << post[:id]
+          else
+            next
+          end
+
+          comments = db.prepare(query).execute.to_a
           comments.each do |comment|
-            comment[:user] = db.prepare('SELECT * FROM `users` WHERE `id` = ?').execute(
-              comment[:user_id]
-            ).first
+            comment_uids << comment[:user_id] unless users[comment[:user_id]]
           end
           post[:comments] = comments.reverse
 
-          post[:user] = db.prepare('SELECT * FROM `users` WHERE `id` = ?').execute(
-            post[:user_id]
-          ).first
-
-          posts.push(post) if post[:user][:del_flg] == 0
           break if posts.length >= POSTS_PER_PAGE
         end
+
+        if comment_uids.size > 0
+          q = 'SELECT * FROM `users` WHERE `id` IN ( ' + comment_uids.join(',') + ' )'
+          c << q
+          db.prepare(q).execute.each{ |u|
+            users[u[:id]] = u
+          }
+        end
+
+        q = 'SELECT `post_id`, COUNT(*) AS `count` FROM `comments` WHERE `post_id` IN (' + post_ids.join(?,) + ') GROUP BY `post_id`'
+        c << q
+        post_count = Hash[db.prepare(q).execute.map{ |p| [p[:post_id], p[:count]] }]
+
+        posts.each do |post|
+          post[:comment_count] = post_count[post[:id]]
+
+          post[:comments].each do |comment|
+            comment[:user] = users[comment[:user_id]]
+          end
+        end
+        #raise [c.length, c].inspect
 
         posts
       end
