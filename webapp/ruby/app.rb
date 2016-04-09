@@ -74,17 +74,12 @@ module Isuconp
         return true
       end
 
-      def digest(src)
-        # opensslのバージョンによっては (stdin)= というのがつくので取る
-        `printf "%s" #{Shellwords.shellescape(src)} | openssl dgst -sha512 | sed 's/^.*= //'`.strip
-      end
-
       def calculate_salt(account_name)
-        digest account_name
+        OpenSSL::Digest::SHA512.hexdigest account_name
       end
 
       def calculate_passhash(account_name, password)
-        digest "#{password}:#{calculate_salt(account_name)}"
+        OpenSSL::Digest::SHA512.hexdigest "#{password}:#{calculate_salt(account_name)}"
       end
 
       def get_session_user()
@@ -129,17 +124,14 @@ module Isuconp
         posts
       end
 
-      def image_url(post)
-        ext = ""
-        if post[:mime] == "image/jpeg"
-          ext = ".jpg"
-        elsif post[:mime] == "image/png"
-          ext = ".png"
-        elsif post[:mime] == "image/gif"
-          ext = ".gif"
-        end
+      EXT = {
+        'image/jpeg' => '.jpg',
+        'image/png' => '.png',
+        'image/gif' => '.gif',
+      }.freeze
 
-        "/image/#{post[:id]}#{ext}"
+      def image_url(post)
+        "/image/#{post[:id]}#{EXT[post[:mime]]}"
       end
     end
 
