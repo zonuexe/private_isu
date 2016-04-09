@@ -320,13 +320,25 @@ module Isuconp
 
         params['file'][:tempfile].rewind
         query = 'INSERT INTO `posts` (`user_id`, `mime`, `imgdata`, `body`) VALUES (?,?,?,?)'
+
         db.prepare(query).execute(
           me[:id],
           mime,
-          params["file"][:tempfile].read,
-          params["body"],
+          '',
+          params['body'],
         )
         pid = db.last_id
+
+        @@ext ||= {
+          'image/jpeg' => '.jpg',
+          'image/png' => '.png',
+          'image/gif' => '.gif',
+        }.freeze
+
+        fname = pid.to_s + @@ext[mime]
+        open(File.expand_path('../public/image/' + fname, __dir__), 'wb') do |f|
+          f.write params["file"][:tempfile].read
+        end
 
         redirect "/posts/#{pid}", 302
       else
